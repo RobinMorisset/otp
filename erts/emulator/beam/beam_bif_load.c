@@ -601,6 +601,140 @@ check_old_code_1(BIF_ALIST_1)
     BIF_RET(res);
 }
 
+BIF_RETTYPE
+get_function_coverage_1(BIF_ALIST_1)
+{
+    ErtsCodeIndex code_ix;
+    Module* modp;
+    const BeamCodeHeader* hdr;
+    Eterm* hp;
+    Eterm res;
+    Eterm tmp;
+    size_t i;
+
+    if (is_not_atom(BIF_ARG_1)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    code_ix = erts_active_code_ix();
+    modp = erts_get_module(BIF_ARG_1, code_ix);
+    if (modp == NULL) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    hdr = modp->curr.code_hdr;
+    if (hdr == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    if (hdr->function_coverage == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+
+    res = NIL;
+    // 3 for the pair {F, A} + 3 for the pair {FA, Covered} + 2 for the CONS
+    hp = HAlloc(BIF_P, 8 * hdr->num_functions);
+    for (i = 0; i < (size_t)(hdr->num_functions); ++i) {
+        tmp = TUPLE2(hp, hdr->functions[i]->mfa.function, make_small(hdr->functions[i]->mfa.arity));
+        hp += 3;
+        tmp = TUPLE2(hp, tmp, hdr->function_coverage[i] ? am_true : am_false);
+        hp += 3;
+        res = CONS(hp, tmp, res);
+        hp += 2;
+    }
+    BIF_RET(res);
+}
+
+BIF_RETTYPE
+get_line_coverage_1(BIF_ALIST_1)
+{
+    ErtsCodeIndex code_ix;
+    Module* modp;
+    const BeamCodeHeader* hdr;
+    const BeamCodeLineTab *lt;
+    Eterm* hp;
+    Eterm* hend;
+    Eterm tmp;
+    Eterm res;
+    size_t i;
+    unsigned location;
+
+    if (is_not_atom(BIF_ARG_1)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    code_ix = erts_active_code_ix();
+    modp = erts_get_module(BIF_ARG_1, code_ix);
+    if (modp == NULL) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    hdr = modp->curr.code_hdr;
+    if (hdr == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    if (hdr->line_coverage == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+
+    lt = hdr->line_table;
+
+    res = NIL;
+    // 3 for the pair {Line, Covered} + 2 for the CONS
+    hp = HAlloc(BIF_P, 5 * hdr->line_coverage_len);
+    hend = hp + 5 * hdr->line_coverage_len;
+    for (i = 0; true; ++i) {
+        if (lt->loc_size == 2) {
+            location = lt->loc_tab.p2[i];
+        } else {
+            ASSERT(lt->loc_size == 4);
+            location = lt->loc_tab.p4[i];
+        }
+        if (location == LINE_INVALID_LOCATION) {
+            HRelease(BIF_P, hend, hp);
+            break;
+        }
+        tmp = TUPLE2(hp, make_small(LOC_LINE(location)), hdr->line_coverage[i] ? am_true : am_false);
+        hp += 3;
+        res = CONS(hp, tmp, res);
+        hp += 2;
+    }
+    BIF_RET(res);
+}
+
+BIF_RETTYPE
+reset_coverage_1(BIF_ALIST_1)
+{
+    ErtsCodeIndex code_ix;
+    Module* modp;
+    const BeamCodeHeader* hdr;
+
+    if (is_not_atom(BIF_ARG_1)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    code_ix = erts_active_code_ix();
+    modp = erts_get_module(BIF_ARG_1, code_ix);
+    if (modp == NULL) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    hdr = modp->curr.code_hdr;
+    if (hdr == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    if (hdr->line_coverage == NULL && hdr->function_coverage == NULL) {
+        // TODO: return a more distinctive error
+        BIF_ERROR(BIF_P, BADARG);
+    }
+
+    if (hdr->line_coverage) {
+        memset((byte*) hdr->line_coverage, 0, hdr->line_coverage_len);
+    }
+    if (hdr->function_coverage) {
+        memset((byte*) hdr->function_coverage, 0, hdr->num_functions);
+    }
+    BIF_RET(am_ok);
+}
+
 Eterm
 erts_check_process_code(Process *c_p, Eterm module, int *redsp, int fcalls)
 {

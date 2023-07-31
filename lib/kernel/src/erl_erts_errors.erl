@@ -320,6 +320,12 @@ format_erlang_error(check_old_code, [_], _) ->
     [not_atom];
 format_erlang_error(check_process_code, [Pid,Module], _) ->
     [must_be_local_pid(Pid),must_be_atom(Module)];
+format_erlang_error(get_function_coverage, [_], _) ->
+    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
+format_erlang_error(get_line_coverage, [_], _) ->
+    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
+format_erlang_error(reset_coverage, [_], _) ->
+    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
 format_erlang_error(check_process_code, [Pid,Module,_Options], Cause) ->
     format_erlang_error(check_process_code, [Pid,Module], Cause) ++
         [case Cause of

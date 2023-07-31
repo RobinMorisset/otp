@@ -1141,6 +1141,8 @@ public:
 
     bool emit(unsigned op, const Span<ArgVal> &args);
 
+    void emit_coverage(bool *coverage_array, Uint index);
+
     void codegen(JitAllocator *allocator,
                  const void **executable_ptr,
                  void **writable_ptr,

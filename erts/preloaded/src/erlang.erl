@@ -214,6 +214,7 @@
 -export([cancel_timer/1, cancel_timer/2, ceil/1,
 	 check_old_code/1, check_process_code/2,
 	 check_process_code/3, crc32/1]).
+-export([get_function_coverage/1, get_line_coverage/1, reset_coverage/1]).
 -export([crc32/2, crc32_combine/3, date/0, decode_packet/3]).
 -export([delete_element/2]).
 -export([delete_module/1, demonitor/1, demonitor/2, display/1]).
@@ -801,6 +802,20 @@ ceil(_) ->
 -spec check_old_code(Module) -> boolean() when
       Module :: module().
 check_old_code(_Module) ->
+    erlang:nif_error(undefined).
+
+-spec reset_coverage(module()) -> ok.
+reset_coverage(_Module) ->
+    erlang:nif_error(undefined).
+
+-spec get_function_coverage(module()) -> [{{Function, Arity}, boolean()}] when
+      Function :: atom(),
+      Arity :: non_neg_integer().
+get_function_coverage(_Module) ->
+    erlang:nif_error(undefined).
+
+-spec get_line_coverage(module()) -> [{integer(), boolean()}].
+get_line_coverage(_Module) ->
     erlang:nif_error(undefined).
 
 %% check_process_code/2

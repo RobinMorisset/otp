@@ -29,6 +29,7 @@
 #    include "beam_file.h"
 #    include "beam_common.h"
 
+#    include <stdbool.h>
 #    if defined(__APPLE__)
 #        include <libkern/OSCacheControl.h>
 #    endif
@@ -65,6 +66,7 @@ void beamasm_purge_module(const void *executable_region,
                           size_t size);
 void beamasm_delete_assembler(void *ba);
 int beamasm_emit(void *ba, unsigned specific_op, BeamOp *op);
+void beamasm_emit_coverage(void *instance, bool* coverage_array, Uint index);
 ErtsCodePtr beamasm_get_code(void *ba, int label);
 ErtsCodePtr beamasm_get_lambda(void *ba, int index);
 const byte *beamasm_get_rodata(void *ba, char *label);

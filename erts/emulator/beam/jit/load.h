@@ -87,6 +87,8 @@ struct LoaderState_ {
      * ERTS_SWORD_MAX. */
     SWord *lambda_literals;
 
+    bool is_in_function_prologue;
+
     void *ba; /* Assembler used to create x86 assembly */
 
     const void *executable_region; /* Native module after codegen */

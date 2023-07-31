@@ -209,6 +209,16 @@ void BeamModuleAssembler::emit_validate(const ArgWord &Arity) {
 
 /* Instrs */
 
+void BeamModuleAssembler::emit_coverage(bool *coverage_array, Uint index) {
+    comment("emit_coverage(coverage_array = %p, index = %d)", coverage_array, index);
+    // TODO: check that this register is always unused between bytecode instructions
+    const x86::Gp tmp_reg = x86::r10;
+    // TODO: avoid repeating that load-immediate, if there is still in that reg a sufficiently close value
+    mov_imm(tmp_reg, coverage_array + index);
+    // emit store of true/1 to tmp_register + i
+    a.mov(x86::byte_ptr(tmp_reg), imm(1));
+}
+
 void BeamModuleAssembler::emit_i_validate(const ArgWord &Arity) {
     emit_validate(Arity);
 }

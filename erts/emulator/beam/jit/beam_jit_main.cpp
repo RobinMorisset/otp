@@ -521,6 +521,11 @@ extern "C"
         return ba->emit(specific_op, args);
     }
 
+    void beamasm_emit_coverage(void *instance, bool *coverage_array, Uint index) {
+        BeamModuleAssembler *ba = static_cast<BeamModuleAssembler *>(instance);
+        ba->emit_coverage(coverage_array, index);
+    }
+
     void beamasm_emit_call_nif(const ErtsCodeInfo *info,
                                void *normal_fptr,
                                void *lib,

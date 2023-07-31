@@ -1254,6 +1254,8 @@ extern int erts_no_line_info;
 extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
 extern int erts_compat_rel;
+extern int erts_function_coverage;
+extern int erts_line_coverage;
 
 #ifdef BEAMASM
 extern int erts_jit_asm_dump;

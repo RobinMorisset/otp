@@ -172,8 +172,8 @@ int erts_backtrace_depth;	/* How many functions to show in a backtrace
 
 erts_atomic32_t erts_max_gen_gcs;
 
-Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error, 
-				     am_info or am_warning, am_error is 
+Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error,
+				     am_info or am_warning, am_error is
 				     the default for BC */
 
 int erts_compat_rel;
@@ -199,6 +199,9 @@ int erts_no_crash_dump = 0;	/* Use -d to suppress crash dump. */
 int erts_no_line_info = 0;	/* -L: Don't load line information */
 
 #ifdef BEAMASM
+int erts_function_coverage = 0;	/* -JDfcov Enable function coverage for modules loaded in the future */
+int erts_line_coverage = 0;	/* -JDlcov Enable line coverage for modules loaded in the future */
+
 int erts_jit_asm_dump = 0;	/* -JDdump: Dump assembly code */
 #endif
 
@@ -238,15 +241,15 @@ has_prefix(const char *prefix, const char *string)
 }
 
 static char*
-progname(char *fullname) 
+progname(char *fullname)
 {
     int i;
-    
+
     i = sys_strlen(fullname);
     while (i >= 0) {
-	if ((fullname[i] != '/') && (fullname[i] != '\\')) 
+	if ((fullname[i] != '/') && (fullname[i] != '\\'))
 	    i--;
-	else 
+	else
 	    break;
     }
     return fullname+i+1;
@@ -260,11 +263,11 @@ this_rel_num(void)
     if (this_rel < 1) {
 	int i;
 	char this_rel_str[] = ERLANG_OTP_RELEASE;
-	    
+
 	i = 0;
 	while (this_rel_str[i] && !isdigit((int) this_rel_str[i]))
 	    i++;
-	this_rel = atoi(&this_rel_str[i]); 
+	this_rel = atoi(&this_rel_str[i]);
 	if (this_rel < 1)
 	    erts_exit(1, "Unexpected ERLANG_OTP_RELEASE format\n");
     }
@@ -455,7 +458,7 @@ erl_first_process_otp(char* mod_name, int argc, char** argv)
 
 static Eterm
 erl_system_process_otp(Eterm parent_pid, char* modname, int off_heap_msgq, int prio)
-{ 
+{
     Process *parent;
     ErlSpawnOpts so;
     Eterm mod, res;
@@ -652,6 +655,8 @@ void erts_usage(void)
 
 #ifdef BEAMASM
     erts_fprintf(stderr, "-JDdump bool   enable or disable dumping of generated assembly code for each module loaded\n");
+	erts_fprintf(stderr, "-JDfcov bool   enable or disable instrumentation of functions for coverage\n");
+	erts_fprintf(stderr, "-JDlcov bool   enable or disable fine-grained instrumentaton for line coverage\n");
     erts_fprintf(stderr, "-JPperf true|false|dump|map|fp|no_fp   enable or disable support for perf on Linux\n");
     erts_fprintf(stderr, "-JMsingle bool enable the use of single-mapped RWX memory for JIT:ed code\n");
     erts_fprintf(stderr, "\n");
@@ -1317,7 +1322,7 @@ early_init(int *argc, char **argv) /*
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_late_init();
 #endif
-    
+
 #ifdef ERTS_ENABLE_LOCK_COUNT
     erts_lcnt_late_init();
 #endif
@@ -1736,7 +1741,27 @@ erl_start(int argc, char **argv)
                         erts_fprintf(stderr, "bad +JDdump flag %s\n", arg);
                         erts_usage();
                     }
-                }
+                } else if (has_prefix("fcov", sub_param)) {
+					arg = get_arg(sub_param+4, argv[i + 1], &i);
+					if (sys_strcmp(arg, "true") == 0) {
+                        erts_function_coverage = 1;
+                    } else if (sys_strcmp(arg, "false") == 0) {
+                        erts_function_coverage = 0;
+                    } else {
+                        erts_fprintf(stderr, "bad +JDfcov flag %s\n", arg);
+                        erts_usage();
+                    }
+				} else if (has_prefix("lcov", sub_param)) {
+					arg = get_arg(sub_param+4, argv[i + 1], &i);
+					if (sys_strcmp(arg, "true") == 0) {
+                        erts_line_coverage = 1;
+                    } else if (sys_strcmp(arg, "false") == 0) {
+                        erts_line_coverage = 0;
+                    } else {
+                        erts_fprintf(stderr, "bad +JDfcov flag %s\n", arg);
+                        erts_usage();
+                    }
+				}
                 break;
             case 'P':
                 sub_param++;
@@ -2252,7 +2277,7 @@ erl_start(int argc, char **argv)
 	    /* suggested stack size (Kilo Words) for threads in thread pool */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    erts_async_thread_suggested_stack_size = atoi(arg);
-	    
+
 	    if ((erts_async_thread_suggested_stack_size
 		 < ERTS_ASYNC_THREAD_MIN_STACK_SIZE)
 		|| (erts_async_thread_suggested_stack_size >
@@ -2516,7 +2541,7 @@ erl_start(int argc, char **argv)
 	    = (Process *) erts_ptab_pix2intptr_ddrb(&erts_proc,
 						    internal_pid_index(pid));
 	ASSERT(erts_code_purger && erts_code_purger->common.id == pid);
-	erts_proc_inc_refc(erts_code_purger); 
+	erts_proc_inc_refc(erts_code_purger);
 
 	pid = erl_system_process_otp(erts_init_process_id,
                                      "erts_literal_area_collector",

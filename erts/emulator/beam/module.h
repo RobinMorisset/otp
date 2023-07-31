@@ -21,6 +21,8 @@
 #ifndef __MODULE_H__
 #define __MODULE_H__
 
+#include <stdbool.h>
+
 #include "index.h"
 #include "beam_code.h"
 

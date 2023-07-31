@@ -69,6 +69,27 @@ int beam_load_prepare_emit(LoaderState *stp) {
     hdr->md5_ptr = NULL;
     hdr->are_nifs = NULL;
 
+    if (erts_line_coverage && stp->beam.lines.item_count > 0) {
+        // +1 because of LOC_INVALID_LOCATION which is added at the end
+        // instruction_count and not item_count because at runtime locations seem connected to the line instruction and not the items in the BEAM..
+        size_t alloc_size = stp->beam.lines.instruction_count + 1;
+        hdr->line_coverage = erts_alloc(ERTS_ALC_T_BYTECODE_COVERAGE, alloc_size);
+        memset(hdr->line_coverage, 0, alloc_size);
+        hdr->line_coverage_len = alloc_size;
+        stp->is_in_function_prologue = false;
+    } else {
+        hdr->line_coverage = NULL;
+        hdr->line_coverage_len = 0;
+    }
+
+    if (erts_function_coverage) {
+        size_t alloc_size = hdr->num_functions;
+        hdr->function_coverage = erts_alloc(ERTS_ALC_T_BYTECODE_COVERAGE, alloc_size);
+        memset(hdr->function_coverage, 0, alloc_size);
+    } else {
+        hdr->function_coverage = NULL;
+    }
+
     stp->load_hdr = hdr;
 
     stp->labels = erts_alloc(ERTS_ALC_T_PREPARED_CODE,
@@ -550,6 +571,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         if (stp->func_line) {
             stp->func_line[stp->function_number] = stp->current_li;
         }
+        stp->is_in_function_prologue = true;
 
         break;
     case op_nif_start:
@@ -585,6 +607,18 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         if (add_line_entry(stp, tmp_op->a[0].val, 0)) {
             goto load_error;
         }
+        if (erts_line_coverage
+            && !stp->is_in_function_prologue
+            && stp->beam.lines.item_count > 0) {
+            unsigned loc_index = stp->current_li - 1;
+            if (loc_index >= stp->load_hdr->line_coverage_len) {
+                BeamLoadError2(stp,
+                    "Tried emitting coverage for location %u that is out of bounds (line_coverage_len = %u)",
+                    loc_index,
+                    stp->load_hdr->line_coverage_len);
+            }
+            beamasm_emit_coverage(stp->ba, stp->load_hdr->line_coverage, loc_index);
+        }
         break;
     case op_int_code_end:
         /* End of code found. */
@@ -598,6 +632,32 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         stp->function = THE_NON_VALUE;
         stp->genop = NULL;
         stp->specific_op = -1;
+        break;
+    case op_i_test_yield:
+        stp->is_in_function_prologue = false;
+        if (erts_function_coverage) {
+            if (stp->function_number == 0) {
+                BeamLoadError0(stp, "cannot emit function coverage for function number 0.");
+            }
+            beamasm_emit_coverage(stp->ba, stp->load_hdr->function_coverage, stp->function_number - 1);
+        }
+        if (erts_line_coverage
+            && stp->beam.lines.item_count > 0
+            && stp->current_li > 0) {
+            // Note: there is usually at least one op_func_line_I instruction first,
+            // so stp->current_li should always be positive.
+            // But I've discovered at least one instance where that is not true, hence that extra check.
+            unsigned loc_index = stp->current_li - 1;
+            if (loc_index >= stp->load_hdr->line_coverage_len) {
+                BeamLoadError3(stp,
+                    "Tried emitting coverage for location %u (current_li=%u) that is out of bounds (line_coverage_len = %u)",
+                    loc_index,
+                    stp->current_li,
+                    stp->load_hdr->line_coverage_len);
+            }
+            beamasm_emit_coverage(stp->ba, stp->load_hdr->line_coverage, loc_index);
+        }
+        break;
     }
 
     return 1;

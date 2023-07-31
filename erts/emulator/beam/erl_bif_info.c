@@ -5142,6 +5142,32 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 #else
             BIF_RET(am_notsup);
 #endif
+        } else if (ERTS_IS_ATOM_STR("function_coverage", BIF_ARG_1)) {
+            Eterm res = erts_function_coverage ? am_true : am_false;
+            switch(BIF_ARG_2)
+            {
+            case am_false:
+                erts_function_coverage = 0;
+                BIF_RET(res);
+            case am_true:
+                erts_function_coverage = 1;
+                BIF_RET(res);
+            default:
+                break;
+            }
+        } else if (ERTS_IS_ATOM_STR("line_coverage", BIF_ARG_1)) {
+            Eterm res = erts_line_coverage ? am_true : am_false;
+            switch(BIF_ARG_2)
+            {
+            case am_false:
+                erts_line_coverage = 0;
+                BIF_RET(res);
+            case am_true:
+                erts_line_coverage = 1;
+                BIF_RET(res);
+            default:
+                break;
+            }
         } else if (ERTS_IS_ATOM_STR("proc_sig_buffers", BIF_ARG_1)) {
             switch (BIF_ARG_2)
             {

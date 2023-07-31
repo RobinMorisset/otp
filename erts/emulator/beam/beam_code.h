@@ -21,6 +21,8 @@
 #ifndef _BEAM_CODE_H
 #define _BEAM_CODE_H
 
+#include <stdbool.h>
+
 #include "sys.h"
 #include "erl_process.h"
 
@@ -86,6 +88,11 @@ typedef struct beam_code_header {
      * Pointer to the line table (or NULL if none).
      */
     const BeamCodeLineTab *line_table;
+
+    bool *line_coverage;
+    Uint line_coverage_len;
+
+    bool *function_coverage;
 
     /*
      * Pointer to the module MD5 sum (16 bytes)
