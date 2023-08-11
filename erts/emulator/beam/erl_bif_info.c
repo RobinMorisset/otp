@@ -4317,6 +4317,12 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
             return am_false;
 #endif
         }
+        else if (ERTS_IS_ATOM_STR("line_coverage", BIF_ARG_1)) {
+            BIF_RET(erts_line_coverage ? am_true : am_false);
+        }
+        else if (ERTS_IS_ATOM_STR("function_coverage", BIF_ARG_1)) {
+            BIF_RET(erts_function_coverage ? am_true : am_false);
+        }
     }
     else if (is_tuple(BIF_ARG_1)) {
 	Eterm* tp = tuple_val(BIF_ARG_1);
