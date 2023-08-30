@@ -622,11 +622,9 @@ get_function_coverage_1(BIF_ALIST_1)
     }
     hdr = modp->curr.code_hdr;
     if (hdr == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
     if (hdr->function_coverage == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -668,11 +666,9 @@ get_line_coverage_1(BIF_ALIST_1)
     }
     hdr = modp->curr.code_hdr;
     if (hdr == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
     if (hdr->line_coverage == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -724,11 +720,9 @@ reset_coverage_1(BIF_ALIST_1)
     }
     hdr = modp->curr.code_hdr;
     if (hdr == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
     if (hdr->line_coverage == NULL && hdr->function_coverage == NULL) {
-        // TODO: return a more distinctive error
         BIF_ERROR(BIF_P, BADARG);
     }
 

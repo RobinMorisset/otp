@@ -320,12 +320,36 @@ format_erlang_error(check_old_code, [_], _) ->
     [not_atom];
 format_erlang_error(check_process_code, [Pid,Module], _) ->
     [must_be_local_pid(Pid),must_be_atom(Module)];
-format_erlang_error(get_function_coverage, [_], _) ->
-    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
-format_erlang_error(get_line_coverage, [_], _) ->
-    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
-format_erlang_error(reset_coverage, [_], _) ->
-    [not_atom]; % TODO: Can also be an atom that is not a module, or the module was not loaded with coverage
+format_erlang_error(get_function_coverage, [Module], _) ->
+    [if
+        not is_atom(Module) ->
+            not_atom;
+        true ->
+            case erlang:module_loaded(Module) of
+                false -> module_not_loaded;
+                true -> function_coverage_disabled
+            end
+    end];
+format_erlang_error(get_line_coverage, [Module], _) ->
+    [if
+        not is_atom(Module) ->
+            not_atom;
+        true ->
+            case erlang:module_loaded(Module) of
+                false -> module_not_loaded;
+                true -> line_coverage_disabled
+            end
+    end];
+format_erlang_error(reset_coverage, [Module], _) ->
+    if
+        not is_atom(Module) ->
+            [not_atom];
+        true ->
+            case erlang:module_loaded(Module) of
+                false -> [module_not_loaded];
+                true -> [function_coverage_disabled, line_coverage_disabled]
+            end
+    end;
 format_erlang_error(check_process_code, [Pid,Module,_Options], Cause) ->
     format_erlang_error(check_process_code, [Pid,Module], Cause) ++
         [case Cause of
@@ -1559,5 +1583,11 @@ expand_error(range) ->
     <<"out of range">>;
 expand_error(self_not_allowed) ->
     <<"the pid refers to the current process">>;
+expand_error(module_not_loaded) ->
+    <<"the atom does not refer to a loaded module">>;
+expand_error(line_coverage_disabled) ->
+    <<"the module passed as argument was not loaded with line coverage enabled">>;
+expand_error(function_coverage_disabled) ->
+    <<"the module passed as argument was not loaded with function coverage enabled">>;
 expand_error(E) when is_binary(E) ->
     E.
