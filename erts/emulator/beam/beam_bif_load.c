@@ -690,14 +690,20 @@ get_line_coverage_1(BIF_ALIST_1)
             location = lt->loc_tab.p4[i];
         }
         if (location == LINE_INVALID_LOCATION) {
-            HRelease(BIF_P, hend, hp);
+            // Invalid locations are always at the end of the array.
             break;
+        }
+        if (!hdr->line_coverage_valid[i]) {
+            // We omitted emitting coverage instrumentation for this location
+            // (usually because it would fall in the middle of a function prologue).
+            continue;
         }
         tmp = TUPLE2(hp, make_small(LOC_LINE(location)), hdr->line_coverage[i] ? am_true : am_false);
         hp += 3;
         res = CONS(hp, tmp, res);
         hp += 2;
     }
+    HRelease(BIF_P, hend, hp);
     BIF_RET(res);
 }
 

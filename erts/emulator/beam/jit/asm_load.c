@@ -75,6 +75,8 @@ int beam_load_prepare_emit(LoaderState *stp) {
         size_t alloc_size = stp->beam.lines.instruction_count + 1;
         hdr->line_coverage = erts_alloc(ERTS_ALC_T_BYTECODE_COVERAGE, alloc_size);
         memset(hdr->line_coverage, 0, alloc_size);
+        hdr->line_coverage_valid = erts_alloc(ERTS_ALC_T_BYTECODE_COVERAGE, alloc_size);
+        memset(hdr->line_coverage_valid, 0, alloc_size);
         hdr->line_coverage_len = alloc_size;
         stp->is_in_function_prologue = false;
     } else {
@@ -617,6 +619,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
                     loc_index,
                     stp->load_hdr->line_coverage_len);
             }
+            stp->load_hdr->line_coverage_valid[loc_index] = 1;
             beamasm_emit_coverage(stp->ba, stp->load_hdr->line_coverage, loc_index);
         }
         break;
@@ -655,6 +658,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
                     stp->current_li,
                     stp->load_hdr->line_coverage_len);
             }
+            stp->load_hdr->line_coverage_valid[loc_index] = 1;
             beamasm_emit_coverage(stp->ba, stp->load_hdr->line_coverage, loc_index);
         }
         break;

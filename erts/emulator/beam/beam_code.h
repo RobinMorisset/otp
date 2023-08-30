@@ -90,6 +90,7 @@ typedef struct beam_code_header {
     const BeamCodeLineTab *line_table;
 
     bool *line_coverage;
+    bool *line_coverage_valid;
     Uint line_coverage_len;
 
     bool *function_coverage;
