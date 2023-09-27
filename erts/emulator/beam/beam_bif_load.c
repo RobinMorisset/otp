@@ -678,7 +678,7 @@ get_line_coverage_1(BIF_ALIST_1)
     // 3 for the pair {Line, Covered} + 2 for the CONS
     hp = HAlloc(BIF_P, 5 * hdr->line_coverage_len);
     hend = hp + 5 * hdr->line_coverage_len;
-    for (i = 0; true; ++i) {
+    for (i = 0; i < hdr->line_coverage_len; ++i) {
         if (lt->loc_size == 2) {
             location = lt->loc_tab.p2[i];
         } else {
@@ -686,8 +686,7 @@ get_line_coverage_1(BIF_ALIST_1)
             location = lt->loc_tab.p4[i];
         }
         if (location == LINE_INVALID_LOCATION) {
-            // Invalid locations are always at the end of the array.
-            break;
+            continue;
         }
         if (!hdr->line_coverage_valid[i]) {
             // We omitted emitting coverage instrumentation for this location
