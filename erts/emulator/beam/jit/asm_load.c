@@ -78,7 +78,6 @@ int beam_load_prepare_emit(LoaderState *stp) {
         hdr->line_coverage_valid = erts_alloc(ERTS_ALC_T_BYTECODE_COVERAGE, alloc_size);
         memset(hdr->line_coverage_valid, 0, alloc_size);
         hdr->line_coverage_len = alloc_size;
-        stp->is_in_function_prologue = false;
     } else {
         hdr->line_coverage = NULL;
         hdr->line_coverage_len = 0;
@@ -573,7 +572,6 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         if (stp->func_line) {
             stp->func_line[stp->function_number] = stp->current_li;
         }
-        stp->is_in_function_prologue = true;
 
         break;
     case op_nif_start:
@@ -617,7 +615,6 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
             goto load_error;
         }
         if (erts_line_coverage
-            && !stp->is_in_function_prologue
             && stp->beam.lines.item_count > 0) {
             unsigned loc_index = stp->current_li - 1;
             if (loc_index >= stp->load_hdr->line_coverage_len) {
@@ -644,7 +641,6 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         stp->specific_op = -1;
         break;
     case op_i_test_yield:
-        stp->is_in_function_prologue = false;
         if (erts_function_coverage) {
             if (stp->function_number == 0) {
                 BeamLoadError0(stp, "cannot emit function coverage for function number 0.");

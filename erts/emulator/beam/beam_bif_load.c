@@ -689,8 +689,6 @@ get_line_coverage_1(BIF_ALIST_1)
             continue;
         }
         if (!hdr->line_coverage_valid[i]) {
-            // We omitted emitting coverage instrumentation for this location
-            // (usually because it would fall in the middle of a function prologue).
             continue;
         }
         tmp = TUPLE2(hp, make_small(LOC_LINE(location)), hdr->line_coverage[i] ? am_true : am_false);
