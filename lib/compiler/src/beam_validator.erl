@@ -372,6 +372,8 @@ vi({'%',_}, Vst) ->
     Vst;
 vi({line,_}, Vst) ->
     Vst;
+vi({line_hint,_}, Vst) ->
+    Vst;
 vi(nif_start, Vst) ->
     Vst;
 %%
@@ -1929,6 +1931,8 @@ vm_1({set_tuple_element,_,_,_}, #vst{current=#st{setelem=true}}=Vst) ->
 vm_1({get_tuple_element,_,_,_}, Vst) ->
     Vst;
 vm_1({line,_}, Vst) ->
+    Vst;
+vm_1({line_hint,_}, Vst) ->
     Vst;
 vm_1(_, #vst{current=#st{setelem=true}=St}=Vst) ->
     Vst#vst{current=St#st{setelem=false}};

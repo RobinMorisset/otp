@@ -689,3 +689,9 @@ BEAM_FORMAT_NUMBER=0
 ##       * {get_tail,Live,Unit,Dst}
 ##       * {'=:=',Live,Size,Value}.
 182: bs_match/3
+
+# OTP 27
+
+## @spec line_hint Location
+## @doc Only generated when the compiler is called with +line_coverage.
+183: line_hint/1

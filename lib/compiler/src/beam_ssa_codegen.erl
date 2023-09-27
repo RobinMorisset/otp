@@ -34,21 +34,23 @@
                 splitwith/2,takewhile/2]).
 
 -record(cg, {lcount=1 :: beam_label(),          %Label counter
-	     functable=#{} :: #{fa() => beam_label()},
+             functable=#{} :: #{fa() => beam_label()},
              labels=#{} :: #{ssa_label() => 0|beam_label()},
              used_labels=gb_sets:empty() :: gb_sets:set(ssa_label()),
              regs=#{} :: #{beam_ssa:b_var() => ssa_register()},
              ultimate_fail=1 :: beam_label(),
              catches=gb_sets:empty() :: gb_sets:set(ssa_label()),
-             fc_label=1 :: beam_label()
-            }).
+             fc_label=1 :: beam_label(),
+             line_coverage_enabled=false :: boolean()
+             }).
 
 -spec module(beam_ssa:b_module(), [compile:option()]) ->
                     {'ok',beam_asm:module_code()}.
 
 module(#b_module{name=Mod,exports=Es,attributes=Attrs,body=Fs}, Opts) ->
     NoBsMatch = member(no_bs_match, Opts),
-    {Asm,St} = functions(Fs, NoBsMatch, {atom,Mod}),
+    LineCoverageEnabled = proplists:get_bool(line_coverage, Opts),
+    {Asm,St} = functions(Fs, NoBsMatch, {atom,Mod}, LineCoverageEnabled),
     {ok,{Mod,Es,Attrs,Asm,St#cg.lcount}}.
 
 -record(need, {h=0 :: non_neg_integer(),   % heap words
@@ -109,9 +111,9 @@ module(#b_module{name=Mod,exports=Es,attributes=Attrs,body=Fs}, Opts) ->
 
 -type ssa_register() :: xreg() | yreg() | freg() | zreg().
 
-functions(Forms, NoBsMatch, AtomMod) ->
+functions(Forms, NoBsMatch, AtomMod, LineCoverageEnabled) ->
     mapfoldl(fun (F, St) -> function(F, NoBsMatch, AtomMod, St) end,
-             #cg{lcount=1}, Forms).
+             #cg{lcount=1, line_coverage_enabled=LineCoverageEnabled}, Forms).
 
 function(#b_function{anno=Anno,bs=Blocks}, NoBsMatch, AtomMod, St0) ->
     #{func_info:={_,Name,Arity}} = Anno,
@@ -981,7 +983,12 @@ cg_linear([{L,#cg_blk{is=Is0,last=Last}}|Bs], St0) ->
     St1 = new_block_label(L, St0),
     {Is1,St2} = cg_block(Is0, Last, Next, St1),
     {Is2,St} = cg_linear(Bs, St2),
-    {def_block_label(L, St)++Is1++Is2,St};
+    #cg{line_coverage_enabled=LineCoverageEnabled} = St,
+    LineHint = case LineCoverageEnabled of
+        false -> [];
+        true -> [line_hint_from_cg_sets(Is0)]
+    end,
+    {def_block_label(L, St)++LineHint++Is1++Is2,St};
 cg_linear([], St) -> {[],St}.
 
 cg_block([#cg_set{op=recv_next}], #cg_br{succ=Lr0}, _Next, St0) ->
@@ -2504,6 +2511,13 @@ line(#{location:={File,Line}}) ->
     {line,[{location,File,Line}]};
 line(#{}) ->
     {line,[]}.
+
+line_hint_from_cg_sets([#cg_set{anno=#{location:={File,Line}}}|_Tail]) ->
+    {line_hint, [{location,File,Line}]};
+line_hint_from_cg_sets([_|Tail]) ->
+    line_hint_from_cg_sets(Tail);
+line_hint_from_cg_sets([]) ->
+    {line_hint,[]}.
 
 flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),
