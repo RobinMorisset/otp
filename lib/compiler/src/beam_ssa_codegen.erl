@@ -73,14 +73,17 @@ module(#b_module{name=Mod,exports=Es,attributes=Attrs,body=Fs}, Opts) ->
                    def_yregs=[] :: [b_var()]
                   }).
 
--record(cg_br, {bool :: beam_ssa:value(),
+-record(cg_br, {location=undefined :: undefined | {nonempty_string(), integer()},
+                bool :: beam_ssa:value(),
                 succ :: ssa_label(),
                 fail :: ssa_label()
                }).
--record(cg_ret, {arg :: cg_value(),
+-record(cg_ret, {location=undefined :: undefined | {nonempty_string(), integer()},
+                 arg :: cg_value(),
                  dealloc=none :: 'none' | pos_integer()
                 }).
 -record(cg_switch, {anno=#{} :: anno(),
+                    location=undefined :: undefined | {nonempty_string(), integer()},
                     arg :: cg_value(),
                     fail :: ssa_label(),
                     list :: [sw_list_item()]
@@ -986,7 +989,7 @@ cg_linear([{L,#cg_blk{is=Is0,last=Last}}|Bs], St0) ->
     #cg{line_coverage_enabled=LineCoverageEnabled} = St,
     LineHint = case LineCoverageEnabled of
         false -> [];
-        true -> [line_hint_from_cg_sets(Is0)]
+        true -> [line_hint_from_cg_blk(Is0, Last)]
     end,
     {def_block_label(L, St)++LineHint++Is1++Is2,St};
 cg_linear([], St) -> {[],St}.
@@ -2085,18 +2088,36 @@ prune_arg_types_1([_|As], N, ArgTypes) ->
     prune_arg_types_1(As, N + 1, maps:remove(N, ArgTypes));
 prune_arg_types_1([], _N, ArgTypes) -> ArgTypes.
 
-translate_terminator(#b_ret{anno=Anno,arg=Arg}) ->
+translate_terminator(#b_ret{anno=Anno,arg=Arg}=I) ->
     Dealloc = case Anno of
                   #{deallocate:=N} -> N;
                   #{} -> none
               end,
-    #cg_ret{arg=Arg,dealloc=Dealloc};
-translate_terminator(#b_br{bool=#b_literal{val=true},succ=Succ}) ->
-    #cg_br{bool=#b_literal{val=true},succ=Succ,fail=Succ};
-translate_terminator(#b_br{bool=Bool,succ=Succ,fail=Fail}) ->
-    #cg_br{bool=Bool,succ=Succ,fail=Fail};
-translate_terminator(#b_switch{anno=Anno,arg=Bool,fail=Fail,list=List}) ->
-    #cg_switch{anno=Anno,arg=Bool,fail=Fail,list=List}.
+    #cg_ret{location=location_from_instr(I),arg=Arg,dealloc=Dealloc};
+translate_terminator(#b_br{bool=#b_literal{val=true},succ=Succ}=I) ->
+    #cg_br{location=location_from_instr(I),bool=#b_literal{val=true},succ=Succ,fail=Succ};
+translate_terminator(#b_br{bool=Bool,succ=Succ,fail=Fail}=I) ->
+    #cg_br{location=location_from_instr(I),bool=Bool,succ=Succ,fail=Fail};
+translate_terminator(#b_switch{anno=Anno,arg=Bool,fail=Fail,list=List}=I) ->
+    #cg_switch{anno=Anno,location=location_from_instr(I),arg=Bool,fail=Fail,list=List}.
+
+location_from_instr(#b_ret{anno=Anno,arg=Arg}) ->
+    case Anno of
+        #{location:=Loc} -> Loc;
+        _ -> location_from_instr(Arg)
+    end;
+location_from_instr(#b_switch{anno=Anno,arg=Arg}) ->
+    case Anno of
+        #{location:=Loc} -> Loc;
+        _ -> location_from_instr(Arg)
+    end;
+location_from_instr(#b_br{anno=Anno,bool=Bool}) ->
+    case Anno of
+        #{location:=Loc} -> Loc;
+        _ -> location_from_instr(Bool)
+    end;
+location_from_instr(#b_literal{anno=#{location:=Loc}}) -> Loc;
+location_from_instr(_) -> undefined.
 
 translate_phis(L, #cg_br{succ=Target,fail=Target}, Blocks) ->
     #b_blk{is=Is} = maps:get(Target, Blocks),
@@ -2512,12 +2533,23 @@ line(#{location:={File,Line}}) ->
 line(#{}) ->
     {line,[]}.
 
-line_hint_from_cg_sets([#cg_set{anno=#{location:={File,Line}}}|_Tail]) ->
-    {line_hint, [{location,File,Line}]};
-line_hint_from_cg_sets([_|Tail]) ->
-    line_hint_from_cg_sets(Tail);
-line_hint_from_cg_sets([]) ->
-    {line_hint,[]}.
+line_hint_from_cg_blk(CgSets, Last) ->
+    {line_hint, location_from_cg_blk(CgSets, Last)}.
+
+location_from_cg_blk([#cg_set{anno=#{location:={File,Line}}}|_Tail], _Last) ->
+    [{location,File,Line}];
+location_from_cg_blk([_|Tail], Last) ->
+    location_from_cg_blk(Tail, Last);
+location_from_cg_blk([], Last) ->
+    case Last of
+        #cg_br{location={File,Line}} ->
+            [{location,File,Line}];
+        #cg_ret{location={File,Line}} ->
+            [{location,File,Line}];
+        #cg_switch{location={File,Line}} ->
+            [{location,File,Line}];
+        _ -> []
+    end.
 
 flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),

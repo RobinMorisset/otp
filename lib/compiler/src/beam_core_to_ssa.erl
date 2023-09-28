@@ -148,7 +148,8 @@ get_anno(#cg_select{anno=Anno}) -> Anno.
                funs=[],                         %Fun functions
                free=#{},                        %Free variables
                ws=[]   :: [warning()],          %Warnings.
-               no_min_max_bifs=false :: boolean()
+               no_min_max_bifs=false :: boolean(),
+               line_coverage_enabled=false :: boolean()
               }).
 
 -spec module(cerl:c_module(), [compile:option()]) ->
@@ -158,8 +159,10 @@ module(#c_module{name=#c_literal{val=Mod},exports=Es,attrs=As,defs=Fs}, Options)
     Kas = attributes(As),
     Kes = map(fun (#c_var{name={_,_}=Fname}) -> Fname end, Es),
     NoMinMaxBifs = proplists:get_bool(no_min_max_bifs, Options),
+    LineCoverageEnabled = proplists:get_bool(line_coverage, Options),
     St0 = #kern{module=Mod,
-                no_min_max_bifs=NoMinMaxBifs},
+                no_min_max_bifs=NoMinMaxBifs,
+                line_coverage_enabled=LineCoverageEnabled},
     {Kfs,St} = mapfoldl(fun function/2, St0, Fs),
     Body = Kfs ++ St#kern.funs,
     Code = #b_module{name=Mod,exports=Kes,attributes=Kas,body=Body},
@@ -279,8 +282,8 @@ expr(#c_var{name={Name0,Arity}}, Sub, St) ->
     {#b_local{name=#b_literal{val=Name},arity=Arity},[],St};
 expr(#c_var{name=V}, Sub, St) ->
     {#b_var{name=get_vsub(V, Sub)},[],St};
-expr(#c_literal{val=V}, _Sub, St) ->
-    {#b_literal{val=V},[],St};
+expr(#c_literal{val=V,anno=Anno}, _Sub, St) ->
+    {#b_literal{val=V,anno=line_anno_for_coverage(Anno, St)},[],St};
 expr(#c_cons{hd=Ch,tl=Ct}, Sub, St0) ->
     %% Do cons in two steps, first the expressions left to right, then
     %% any remaining literals right to left.
@@ -2343,9 +2346,9 @@ cg(#b_set{args=Args0}=Set0, St) ->
     Args = ssa_args(Args0, St),
     Set = Set0#b_set{args=Args},
     {[Set],St};
-cg(#b_ret{arg=Ret0}, St) ->
+cg(#b_ret{arg=Ret0}=BRet, St) ->
     Ret = ssa_arg(Ret0, St),
-    {[#b_ret{arg=Ret}],St};
+    {[BRet#b_ret{arg=Ret}],St};
 cg(#cg_succeeded{set=Set0}, St0) ->
     {[#b_set{dst=Dst}=Set],St1} = cg(Set0, St0),
     FailCtx = fail_context(St1),
@@ -3116,6 +3119,12 @@ line_anno_1(_, 0) ->
     #{};
 line_anno_1(Name, Line) ->
     #{location => {Name,Line}}.
+
+%% line_anno_for_coverage(Le, State) -> #{} | #{location:={File,Line}}.
+line_anno_for_coverage(Anno, #kern{line_coverage_enabled=true}) ->
+    line_anno(Anno);
+line_anno_for_coverage(_Anno, #kern{line_coverage_enabled=false}) ->
+    #{}.
 
 find_loc([Line|T], File, _) when is_integer(Line) ->
     find_loc(T, File, Line);
