@@ -2150,7 +2150,11 @@ translate_phis(_, _, _) -> [].
 
 phi_copies([#b_set{dst=Dst,args=PhiArgs}|Sets], L) ->
     CopyArgs = [V || {V,Target} <- PhiArgs, Target =:= L],
-    [#cg_set{op=copy,dst=Dst,args=CopyArgs}|phi_copies(Sets, L)];
+    Anno = case CopyArgs of
+        [#b_literal{anno=Anno0}|_] -> Anno0;
+        _ -> #{}
+    end,
+    [#cg_set{op=copy,dst=Dst,args=CopyArgs,anno=Anno}|phi_copies(Sets, L)];
 phi_copies([], _) -> [].
 
 %% opt_move_to_x0([Instruction]) -> [Instruction].
