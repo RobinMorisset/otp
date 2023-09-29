@@ -336,10 +336,10 @@ expr(#c_letrec{anno=A,defs=Cfs,body=Cb}, Sub, St) ->
         false ->
             letrec_local_function(A, Cfs, Cb, Sub, St)
     end;
-expr(#c_case{arg=Ca,clauses=Ccs}, Sub, St0) ->
+expr(#c_case{arg=Ca,clauses=Ccs,anno=Anno}, Sub, St0) ->
     {Ka,Pa,St1} = body(Ca, Sub, St0),           %This is a body!
     {Kvs,Pv,St2} = match_vars(Ka, St1),         %Must have variables here!
-    {Km,St3} = kmatch(Kvs, Ccs, Sub, St2),
+    {Km,St3} = kmatch(Kvs, Ccs, Sub, Anno, St2),
     Match = flatten_seq(build_match(Km)),
     {last(Match),Pa ++ Pv ++ droplast(Match),St3};
 expr(#c_apply{anno=A,op=Cop,args=Cargs}, Sub, St) ->
@@ -1074,12 +1074,13 @@ is_guard_bif(_, _, _) -> false.
 %% added to the VarSub structure and new variables are made visible.
 %% The guard and body are then converted to Kernel form.
 
-%% kmatch([Var], [Clause], Sub, State) -> {Kexpr,State}.
+%% kmatch([Var], [Clause], Sub, Le, State) -> {Kexpr,State}.
 
-kmatch(Us, Ccs, Sub, St0) ->
+kmatch(Us, Ccs, Sub, Anno, St0) ->
+    Le = line_anno_for_coverage(Anno, St0),
     {Cs,St1} = match_pre(Ccs, Sub, St0),        %Convert clauses
     Def = fail,
-    match(Us, Cs, Def, St1).                    %Do the match.
+    match(Us, Cs, Def, Le, St1).                    %Do the match.
 
 %% match_pre([Cclause], Sub, State) -> {[Clause],State}.
 %%  Must be careful not to generate new substitutions here now!
@@ -1091,14 +1092,14 @@ match_pre(Cs, Sub0, St) ->
                              pats=Kps,guard=G,body=B}|Cs0],St1}
           end, {[],St}, Cs).
 
-%% match([Var], [Clause], Default, State) -> {MatchExpr,State}.
+%% match([Var], [Clause], Default, Le, State) -> {MatchExpr,State}.
 
-match([_|_]=Vars, Cs, Def, St0) ->
+match([_|_]=Vars, Cs, Def, Le, St0) ->
     Pcss = partition(Cs),
     foldr(fun (Pcs, {D,St}) ->
-                  match_varcon(Vars, Pcs, D, St)
+                  match_varcon(Vars, Pcs, D, Le, St)
           end, {Def,St0}, Pcss);
-match([], Cs, Def, St) ->
+match([], Cs, Def, _Le, St) ->
     match_guard(Cs, Def, St).
 
 %% match_guard([Clause], Default, State) -> {IfExpr,State}.
@@ -1143,23 +1144,23 @@ partition([C1|Cs]) ->
     [[C1|More]|partition(Rest)];
 partition([]) -> [].
 
-%% match_varcon([Var], [Clause], Def, [Var], Sub, State) ->
+%% match_varcon([Var], [Clause], Def, Anno, State) ->
 %%        {MatchExpr,State}.
 
-match_varcon(Us, [C|_]=Cs, Def, St) ->
+match_varcon(Us, [C|_]=Cs, Def, Le, St) ->
     case is_var_clause(C) of
-        true -> match_var(Us, Cs, Def, St);
-        false -> match_con(Us, Cs, Def, St)
+        true -> match_var(Us, Cs, Def, Le, St);
+        false -> match_con(Us, Cs, Def, Le, St)
     end.
 
-%% match_var([Var], [Clause], Def, State) -> {MatchExpr,State}.
+%% match_var([Var], [Clause], Def, Le, State) -> {MatchExpr,State}.
 %%  Build a call to "select" from a list of clauses all containing a
 %%  variable as the first argument.  We must rename the variable in
 %%  each clause to be the match variable as these clause will share
 %%  this variable and may have different names for it.  Rename aliases
 %%  as well.
 
-match_var([U|Us], Cs0, Def, St) ->
+match_var([U|Us], Cs0, Def, Le, St) ->
     Cs1 = map(fun (#iclause{sub=Sub0,pats=[Arg|As]}=C) ->
                       Vs = [arg_arg(Arg)|arg_alias(Arg)],
                       Sub1 = foldl(fun (#b_var{name=V}, Acc) ->
@@ -1167,14 +1168,14 @@ match_var([U|Us], Cs0, Def, St) ->
                                    end, Sub0, Vs),
                       C#iclause{sub=Sub1,pats=As}
               end, Cs0),
-    match(Us, Cs1, Def, St).
+    match(Us, Cs1, Def, Le, St).
 
 %% match_con(Variables, [Clause], Default, State) -> {SelectExpr,State}.
 %%  Build call to "select" from a list of clauses all containing a
 %%  constructor/constant as first argument.  Group the constructors
 %%  according to type, the order is really irrelevant but tries to be
 %%  smart.
-match_con([U|_Us]=L, Cs, Def, St0) ->
+match_con([U|_Us]=L, Cs, Def, Le, St0) ->
     %% Extract clauses for different constructors (types).
     Ttcs0 = select_types(Cs, [], [], [], [], [], [], [], [], []),
     Ttcs1 = [{T, Types} || {T, [_ | _] = Types} <- Ttcs0],
@@ -1185,7 +1186,7 @@ match_con([U|_Us]=L, Cs, Def, St0) ->
                          #cg_val_clause{anno=Anno} = S,
                          {#cg_type_clause{anno=Anno,type=T,values=Sc},S1} end,
                  St0, Ttcs),
-    {build_alt(build_select(U, Scs), Def),St1}.
+    {build_alt(build_select(U, Scs, Le), Def),St1}.
 
 select_types([NoExpC|Cs], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
     C = expand_pat_lit_clause(NoExpC),
@@ -1614,7 +1615,7 @@ match_clause([U|Us], [#iclause{anno=Anno}|_]=Cs0, Def, St0) ->
     {Match,Vs,St1} = get_match(get_con(Cs0), St0),
     Cs1 = new_clauses(Cs0, U),
     Cs2 = squeeze_clauses(Cs1, []),
-    {B,St2} = match(Vs ++ Us, Cs2, Def, St1),
+    {B,St2} = match(Vs ++ Us, Cs2, Def, #{}, St1),
     {#cg_val_clause{anno=Anno,val=Match,body=B},St2}.
 
 get_con([C|_]) -> arg_arg(clause_arg(C)).       %Get the constructor
@@ -1805,8 +1806,8 @@ build_guard(Cs) -> #cg_guard{clauses=Cs}.
 
 %% build_select(Var, [ConClause]) -> SelectExpr.
 
-build_select(V, [#cg_type_clause{anno=Anno}|_]=Tcs) ->
-    #cg_select{anno=Anno,var=V,types=Tcs}.
+build_select(V, [#cg_type_clause{}|_]=Tcs, Le) ->
+    #cg_select{anno=Le,var=V,types=Tcs}.
 
 %% build_alt(First, Then) -> AltExpr.
 %%  Build an alt.
@@ -2405,10 +2406,10 @@ match_cg(#cg_alt{first=F,then=S}, Fail, St0) ->
     {Fis,St2} = match_cg(F, Tf, St1),
     {Sis,St3} = match_cg(S, Fail, St2),
     {Fis ++ [{label,Tf}] ++ Sis,St3};
-match_cg(#cg_select{var=#b_var{}=Src0,types=Scs}, Fail, St) ->
+match_cg(#cg_select{var=#b_var{}=Src0,types=Scs,anno=Anno}, Fail, St) ->
     Src = ssa_arg(Src0, St),
     match_fmf(fun (#cg_type_clause{type=Type,values=Vs}, F, Sta) ->
-                      select_cg(Type, Vs, Src, F, Fail, Sta)
+                      select_cg(Type, Vs, Src, F, Fail, Anno, Sta)
               end, Fail, St, Scs);
 match_cg(#cg_guard{clauses=Gcs}, Fail, St) ->
     match_fmf(fun (G, F, Sta) ->
@@ -2425,23 +2426,23 @@ match_cg(Ke, _Fail, St0) ->
 %%  wrong.  These are different as in the second case there is no need
 %%  to try the next type, as it will always fail.
 
-select_cg(cg_binary, [S], Var, Tf, Vf, St) ->
+select_cg(cg_binary, [S], Var, Tf, Vf, _Le, St) ->
     select_binary(S, Var, Tf, Vf, St);
-select_cg(cg_bin_seg, Vs, Var, Tf, _Vf, St) ->
+select_cg(cg_bin_seg, Vs, Var, Tf, _Vf, _Le, St) ->
     select_bin_segs(Vs, Var, Tf, St);
-select_cg(cg_bin_int, Vs, Var, Tf, _Vf, St) ->
+select_cg(cg_bin_int, Vs, Var, Tf, _Vf, _Le, St) ->
     select_bin_segs(Vs, Var, Tf, St);
-select_cg(cg_bin_end, [S], Var, Tf, _Vf, St) ->
+select_cg(cg_bin_end, [S], Var, Tf, _Vf, _Le, St) ->
     select_bin_end(S, Var, Tf, St);
-select_cg(cg_map, Vs, Var, Tf, Vf, St) ->
+select_cg(cg_map, Vs, Var, Tf, Vf, _Le, St) ->
     select_map(Vs, Var, Tf, Vf, St);
-select_cg(cg_cons, [S], Var, Tf, Vf, St) ->
+select_cg(cg_cons, [S], Var, Tf, Vf, _Le, St) ->
     select_cons(S, Var, Tf, Vf, St);
-select_cg(cg_nil, [_]=Vs, Var, Tf, Vf, St) ->
+select_cg(cg_nil, [_]=Vs, Var, Tf, Vf, _Le, St) ->
     select_literal(Vs, Var, Tf, Vf, St);
-select_cg(b_literal, Vs, Var, Tf, Vf, St) ->
+select_cg(b_literal, Vs, Var, Tf, Vf, _Le, St) ->
     select_literal(Vs, Var, Tf, Vf, St);
-select_cg(Type, Scs, Var, Tf, Vf, St0) ->
+select_cg(Type, Scs, Var, Tf, Vf, Le, St0) ->
     {Vis,St1} =
         mapfoldl(fun (S, Sta) ->
                          {Val,Is,Stb} = select_val(S, Var, Vf, Sta),
@@ -2449,29 +2450,29 @@ select_cg(Type, Scs, Var, Tf, Vf, St0) ->
                  end, St0, Scs),
     OptVls = combine(lists:sort(combine(Vis))),
     {Vls,Sis,St2} = select_labels(OptVls, St1, [], []),
-    select_val_cg(Type, Var, Vls, Tf, Vf, Sis, St2).
+    select_val_cg(Type, Var, Vls, Tf, Vf, Sis, Le, St2).
 
-select_val_cg({bif,is_atom}, {bool,Dst}, Vls, _Tf, _Vf, Sis, St) ->
+select_val_cg({bif,is_atom}, {bool,Dst}, Vls, _Tf, _Vf, Sis, Le, St) ->
     %% Generate a br instruction for a known boolean value from
     %% the `wait_timeout` instruction.
     #b_var{} = Dst,                             %Assertion.
     [{#b_literal{val=false},Fail},{#b_literal{val=true},Succ}] = sort(Vls),
-    Br = #b_br{bool=Dst,succ=Succ,fail=Fail},
+    Br = #b_br{bool=Dst,succ=Succ,fail=Fail,anno=Le},
     {[Br|Sis],St};
-select_val_cg({bif,is_atom}, {{succeeded,_}=SuccOp,Dst}, Vls, _Tf, _Vf, Sis, St0) ->
+select_val_cg({bif,is_atom}, {{succeeded,_}=SuccOp,Dst}, Vls, _Tf, _Vf, Sis, Le, St0) ->
     [{#b_literal{val=false},Fail},{#b_literal{val=true},Succ}] = sort(Vls),
     #b_var{} = Dst,                             %Assertion.
     %% Generate a `{succeeded,guard}` instruction and two-way branch
     %% following the `peek_message` instruction.
-    {Cond,St} = make_cond(SuccOp, [Dst], Fail, Succ, St0),
+    {Cond,St} = make_cond(SuccOp, [Dst], Fail, Succ, Le, St0),
     {Cond ++ Sis,St};
-select_val_cg(cg_tuple, Tuple, Vls, Tf, Vf, Sis, St0) ->
-    {Is0,St1} = make_cond_branch({bif,is_tuple}, [Tuple], Tf, St0),
+select_val_cg(cg_tuple, Tuple, Vls, Tf, Vf, Sis, Le, St0) ->
+    {Is0,St1} = make_cond_branch({bif,is_tuple}, [Tuple], Tf, Le, St0),
     {Arity,St2} = new_ssa_var(St1),
     GetArity = #b_set{op={bif,tuple_size},dst=Arity,args=[Tuple]},
-    {Is,St} = select_val_cg({bif,is_integer}, Arity, Vls, Vf, Vf, Sis, St2),
+    {Is,St} = select_val_cg({bif,is_integer}, Arity, Vls, Vf, Vf, Sis, Le, St2),
     {Is0 ++ [GetArity|Is],St};
-select_val_cg(Type, R, Vls, Tf, Vf, Sis, St0) ->
+select_val_cg(Type, R, Vls, Tf, Vf, Sis, Le, St0) ->
     {TypeIs,St1} =
         if
             Tf =:= Vf ->
@@ -2481,14 +2482,14 @@ select_val_cg(Type, R, Vls, Tf, Vf, Sis, St0) ->
             true ->
                 %% Different labels for type failure and value
                 %% failure; we need a type test.
-                make_cond_branch(Type, [R], Tf, St0)
+                make_cond_branch(Type, [R], Tf, Le, St0)
         end,
     case Vls of
         [{Val,Succ}] ->
-            {Is,St} = make_cond({bif,'=:='}, [R,Val], Vf, Succ, St1),
+            {Is,St} = make_cond({bif,'=:='}, [R,Val], Vf, Succ, Le, St1),
             {TypeIs++Is++Sis,St};
         [_|_] ->
-            {TypeIs++[#b_switch{arg=R,fail=Vf,list=Vls}|Sis],St1}
+            {TypeIs++[#b_switch{arg=R,fail=Vf,list=Vls,anno=Le}|Sis],St1}
     end.
 
 combine([{Is,Vs1},{Is,Vs2}|Vis]) -> combine([{Is,Vs1 ++ Vs2}|Vis]);
@@ -2509,7 +2510,7 @@ select_literal(S, Src, Tf, Vf, St) ->
     F = fun(ValClause, Fail, St0) ->
                 {Val,ValIs,St1} = select_val(ValClause, Src, Vf, St0),
                 Args = [Src,Val],
-                {Is,St2} = make_cond_branch({bif,'=:='}, Args, Fail, St1),
+                {Is,St2} = make_cond_branch({bif,'=:='}, Args, Fail, #{}, St1),
                 {Is++ValIs,St2}
         end,
     match_fmf(F, Tf, St, S).
@@ -2518,7 +2519,7 @@ select_cons(#cg_val_clause{val=#cg_cons{hd=Hd,tl=Tl},body=B},
             Src, Tf, Vf, St0) ->
     {Bis,St1} = match_cg(B, Vf, St0),
     Args = [Src],
-    {Is,St} = make_cond_branch(is_nonempty_list, Args, Tf, St1),
+    {Is,St} = make_cond_branch(is_nonempty_list, Args, Tf, #{}, St1),
     GetHd = #b_set{op=get_hd,dst=Hd,args=Args},
     GetTl = #b_set{op=get_tl,dst=Tl,args=Args},
     {Is ++ [GetHd,GetTl|Bis],St}.
@@ -2590,7 +2591,7 @@ select_bin_seg(#cg_val_clause{val=#cg_bin_int{}=Seg,body=B},
 
 select_bin_end(#cg_val_clause{val=#cg_bin_end{},body=B}, #b_var{}=Ctx, Tf, St0) ->
     {Bis,St1} = match_cg(B, Tf, St0),
-    {TestIs,St} = make_cond_branch(bs_test_tail, [Ctx,#b_literal{val=0}], Tf, St1),
+    {TestIs,St} = make_cond_branch(bs_test_tail, [Ctx,#b_literal{val=0}], Tf, #{}, St1),
     {TestIs ++ Bis,St}.
 
 select_extract_bin(#cg_bin_seg{type=Type,size=Size0,unit=Unit0,
@@ -2681,7 +2682,7 @@ select_map(Scs, MapSrc, Tf, Vf, St0) ->
                                      body=B}, Fail, St1) ->
                           select_map_val(MapSrc, Es, B, Fail, St1)
                   end, Vf, St0, Scs),
-    {TestIs,St} = make_cond_branch({bif,is_map}, [MapSrc], Tf, St1),
+    {TestIs,St} = make_cond_branch({bif,is_map}, [MapSrc], Tf, #{}, St1),
     {TestIs++Is,St}.
 
 select_map_val(MapSrc, Es, B, Fail, St0) ->
@@ -2807,17 +2808,17 @@ internal_anno(Le) ->
 
 %% internal_cg(Anno, Op, [Arg], [Ret], State) ->
 %%      {[Ainstr],State}.
-internal_cg(_Anno, is_record, [Tuple,TagVal,ArityVal], [Dst], St0) ->
+internal_cg(Anno, is_record, [Tuple,TagVal,ArityVal], [Dst], St0) ->
     {Arity,St1} = new_ssa_var(St0),
     {Tag,St2} = new_ssa_var(St1),
     {Phi,St3} = new_label(St2),
     {False,St4} = new_label(St3),
-    {Is0,St5} = make_cond_branch({bif,is_tuple}, [Tuple], False, St4),
+    {Is0,St5} = make_cond_branch({bif,is_tuple}, [Tuple], False, Anno, St4),
     GetArity = #b_set{op={bif,tuple_size},dst=Arity,args=[Tuple]},
-    {Is1,St6} = make_cond_branch({bif,'=:='}, [Arity,ArityVal], False, St5),
+    {Is1,St6} = make_cond_branch({bif,'=:='}, [Arity,ArityVal], False, Anno, St5),
     GetTag = #b_set{op=get_tuple_element,dst=Tag,
                     args=[Tuple,#b_literal{val=0}]},
-    {Is2,St} = make_cond_branch({bif,'=:='}, [Tag,TagVal], False, St6),
+    {Is2,St} = make_cond_branch({bif,'=:='}, [Tag,TagVal], False, Anno, St6),
     Is3 = [#cg_break{args=[#b_literal{val=true}],phi=Phi},
            {label,False},
            #cg_break{args=[#b_literal{val=false}],phi=Phi},
@@ -3024,17 +3025,17 @@ extract_vars([], _, _) -> [].
 %%% SSA utilities.
 %%%
 
-make_cond(Cond, Args, Fail, Succ, St0) ->
+make_cond(Cond, Args, Fail, Succ, Le, St0) ->
     {Bool,St} = new_ssa_var(St0),
-    Bif = #b_set{op=Cond,dst=Bool,args=Args},
-    Br = #b_br{bool=Bool,succ=Succ,fail=Fail},
+    Bif = #b_set{op=Cond,dst=Bool,args=Args,anno=Le},
+    Br = #b_br{bool=Bool,succ=Succ,fail=Fail,anno=Le},
     {[Bif,Br],St}.
 
-make_cond_branch(Cond, Args, Fail, St0) ->
+make_cond_branch(Cond, Args, Fail, Le, St0) ->
     {Succ,St} = new_label(St0),
     Bool = #b_var{name=Succ},
-    Bif = #b_set{op=Cond,dst=Bool,args=Args},
-    Br = #b_br{bool=Bool,succ=Succ,fail=Fail},
+    Bif = #b_set{op=Cond,dst=Bool,args=Args,anno=Le},
+    Br = #b_br{bool=Bool,succ=Succ,fail=Fail,anno=Le},
     {[Bif,Br,{label,Succ}],St}.
 
 make_uncond_branch(Fail) ->
@@ -3059,7 +3060,7 @@ make_uncond_branch(Fail) ->
 %%
 
 make_succeeded(Var, {Where,Fail}, St) when Where =:= body; Where =:= guard ->
-    make_cond_branch({succeeded,Where}, [Var], Fail, St).
+    make_cond_branch({succeeded,Where}, [Var], Fail, #{}, St).
 
 ssa_args(As, St) ->
     [ssa_arg(A, St) || A <- As].
