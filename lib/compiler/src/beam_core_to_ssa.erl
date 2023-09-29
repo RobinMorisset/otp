@@ -2512,7 +2512,9 @@ select_literal(S, Src, Tf, Vf, St) ->
     F = fun(ValClause, Fail, St0) ->
                 {Val,ValIs,St1} = select_val(ValClause, Src, Vf, St0),
                 Args = [Src,Val],
-                {Is,St2} = make_cond_branch({bif,'=:='}, Args, Fail, #{}, St1),
+                #cg_val_clause{anno=Anno} = ValClause,
+                Le = line_anno_for_coverage(Anno, St1),
+                {Is,St2} = make_cond_branch({bif,'=:='}, Args, Fail, Le, St1),
                 {Is++ValIs,St2}
         end,
     match_fmf(F, Tf, St, S).
