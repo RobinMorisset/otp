@@ -292,9 +292,10 @@ expr(#c_cons{hd=Ch,tl=Ct}, Sub, St0) ->
     {Kt1,Tp1,St3} = force_atomic(Kt0, St2),
     {Kh1,Hp1,St4} = force_atomic(Kh0, St3),
     {#b_set{op=put_list,args=[Kh1,Kt1]},Hp0 ++ Tp0 ++ Tp1 ++ Hp1,St4};
-expr(#c_tuple{es=Ces}, Sub, St0) ->
+expr(#c_tuple{es=Ces,anno=Anno}, Sub, St0) ->
     {Kes,Ep,St1} = atomic_list(Ces, Sub, St0),
-    {#b_set{op=put_tuple,args=Kes},Ep,St1};
+    Le = line_anno_for_coverage(Anno, St1),
+    {#b_set{op=put_tuple,args=Kes,anno=Le},Ep,St1};
 expr(#c_map{anno=A,arg=Var,es=Ces}, Sub, St0) ->
     expr_map(A, Var, Ces, Sub, St0);
 expr(#c_binary{anno=A,segments=Cv}, Sub, St0) ->
