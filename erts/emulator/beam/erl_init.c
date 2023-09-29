@@ -198,10 +198,10 @@ int erts_no_crash_dump = 0;	/* Use -d to suppress crash dump. */
 
 int erts_no_line_info = 0;	/* -L: Don't load line information */
 
-#ifdef BEAMASM
 int erts_function_coverage = 0;	/* -JDfcov Enable function coverage for modules loaded in the future */
 int erts_line_coverage = 0;	/* -JDlcov Enable line coverage for modules loaded in the future */
 
+#ifdef BEAMASM
 int erts_jit_asm_dump = 0;	/* -JDdump: Dump assembly code */
 #endif
 
