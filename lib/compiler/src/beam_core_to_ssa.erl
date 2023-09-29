@@ -95,7 +95,7 @@
 
 -record(cg_tuple, {es}).
 -record(cg_map, {var=#b_literal{val=#{}},op,es}).
--record(cg_map_pair, {key,val}).
+-record(cg_map_pair, {anno=[],key,val}).
 -record(cg_cons, {hd,tl}).
 -record(cg_binary, {segs}).
 -record(cg_bin_seg, {size,unit,type,flags,seg,next}).
@@ -775,10 +775,10 @@ flatten_alias(Pat) -> {[],Pat}.
 
 pattern_map_pairs(Ces0, Sub0, St0) ->
     {Kes,{Sub1,St1}} =
-        mapfoldl(fun(#c_map_pair{key=Ck,val=Cv},{Subi0,Sti0}) ->
+        mapfoldl(fun(#c_map_pair{key=Ck,val=Cv,anno=Anno},{Subi0,Sti0}) ->
                          {Kk,[],Sti1} = expr(Ck, Subi0, Sti0),
                          {Kv,Subi2,Sti2} = pattern(Cv, Subi0, Sti1),
-                         {#cg_map_pair{key=Kk,val=Kv},{Subi2,Sti2}}
+                         {#cg_map_pair{key=Kk,val=Kv,anno=Anno},{Subi2,Sti2}}
                  end, {Sub0, St0}, Ces0),
     %% It is later assumed that these keys are sorted according
     %% to the internal term order, so we'll need to sort them
@@ -2436,8 +2436,8 @@ select_cg(cg_bin_int, Vs, Var, Tf, _Vf, _Le, St) ->
     select_bin_segs(Vs, Var, Tf, St);
 select_cg(cg_bin_end, [S], Var, Tf, _Vf, _Le, St) ->
     select_bin_end(S, Var, Tf, St);
-select_cg(cg_map, Vs, Var, Tf, Vf, _Le, St) ->
-    select_map(Vs, Var, Tf, Vf, St);
+select_cg(cg_map, Vs, Var, Tf, Vf, Le, St) ->
+    select_map(Vs, Var, Tf, Vf, Le, St);
 select_cg(cg_cons, [S], Var, Tf, Vf, _Le, St) ->
     select_cons(S, Var, Tf, Vf, St);
 select_cg(cg_nil, [_]=Vs, Var, Tf, Vf, _Le, St) ->
@@ -2682,13 +2682,13 @@ select_extract_tuple([E|Es], Index, Tuple, Le) ->
     end;
 select_extract_tuple([], _, _, _) -> [].
 
-select_map(Scs, MapSrc, Tf, Vf, St0) ->
+select_map(Scs, MapSrc, Tf, Vf, Le, St0) ->
     {Is,St1} =
         match_fmf(fun(#cg_val_clause{val=#cg_map{op=exact,es=Es},
                                      body=B}, Fail, St1) ->
                           select_map_val(MapSrc, Es, B, Fail, St1)
                   end, Vf, St0, Scs),
-    {TestIs,St} = make_cond_branch({bif,is_map}, [MapSrc], Tf, #{}, St1),
+    {TestIs,St} = make_cond_branch({bif,is_map}, [MapSrc], Tf, Le, St1),
     {TestIs++Is,St}.
 
 select_map_val(MapSrc, Es, B, Fail, St0) ->
@@ -2697,9 +2697,10 @@ select_map_val(MapSrc, Es, B, Fail, St0) ->
     {Eis++Bis,St2}.
 
 select_extract_map([P|Ps], MapSrc, Fail, St0) ->
-    #cg_map_pair{key=Key0,val=Dst} = P,
+    #cg_map_pair{key=Key0,val=Dst,anno=Anno} = P,
     Key = ssa_arg(Key0, St0),
-    Set = #b_set{op=get_map_element,dst=Dst,args=[MapSrc,Key]},
+    Le = line_anno_for_coverage(Anno, St0),
+    Set = #b_set{op=get_map_element,dst=Dst,args=[MapSrc,Key],anno=Le},
     {TestIs,St1} = make_succeeded(Dst, {guard,Fail}, St0),
     {Is,St} = select_extract_map(Ps, MapSrc, Fail, St1),
     {[Set|TestIs]++Is,St};
