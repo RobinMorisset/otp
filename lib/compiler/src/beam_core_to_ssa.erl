@@ -2296,14 +2296,15 @@ pat_list_vars(Ps) ->
              catch_label=none :: 'none' | label(),
              vars=#{} :: map(),     %Defined variables.
              break=0 :: label(),    %Break label
-             checks=[] :: [term()]
+             checks=[] :: [term()],
+             line_coverage_enabled=false :: boolean()
             }).
 
 make_ssa_function(Anno0, Name, As, #cg_match{}=Body,
-                  #kern{module=Mod,vcount=Count0}) ->
+                  #kern{module=Mod,vcount=Count0,line_coverage_enabled=LineCoverageEnabled}) ->
     Anno1 = line_anno(Anno0),
     Anno2 = Anno1#{func_info => {Mod,Name,length(As)}},
-    St0 = #cg{lcount=Count0},
+    St0 = #cg{lcount=Count0,line_coverage_enabled=LineCoverageEnabled},
     {Asm,St} = cg_fun(Body, St0),
     #cg{checks=Checks,lcount=Count} = St,
     Anno = case Checks of
@@ -2652,29 +2653,30 @@ select_extract_int(#cg_bin_int{val=Val,size=#b_literal{val=Sz},
                  args=[#b_literal{val=string},Ctx,#b_literal{val=Bin}]},
     {[Set|TestIs],St}.
 
-select_val(#cg_val_clause{val=#cg_tuple{es=Es},body=B}, V, Vf, St0) ->
-    Eis = select_extract_tuple(Es, 0, V),
+select_val(#cg_val_clause{val=#cg_tuple{es=Es},body=B,anno=Anno}, V, Vf, St0) ->
+    Le = line_anno_for_coverage(Anno, St0),
+    Eis = select_extract_tuple(Es, 0, V, Le),
     {Bis,St1} = match_cg(B, Vf, St0),
     {#b_literal{val=length(Es)},Eis ++ Bis,St1};
 select_val(#cg_val_clause{val=#b_literal{}=Val,body=B}, _V, Vf, St0) ->
     {Bis,St1} = match_cg(B, Vf, St0),
     {Val,Bis,St1}.
 
-select_extract_tuple([E|Es], Index, Tuple) ->
+select_extract_tuple([E|Es], Index, Tuple, Le) ->
     case E of
         #b_var{} ->
             Args = [Tuple,#b_literal{val=Index}],
-            Get = #b_set{op=get_tuple_element,dst=E,args=Args},
-            [Get|select_extract_tuple(Es, Index+1, Tuple)];
+            Get = #b_set{op=get_tuple_element,dst=E,args=Args,anno=Le},
+            [Get|select_extract_tuple(Es, Index+1, Tuple, Le)];
         #b_literal{val=unused} ->
             %% Not extracting tuple elements that are not used is an
             %% optimization for compile time and memory use during
             %% compilation, which is probably worthwhile because it is
             %% common to extract only a few elements from a huge
             %% record.
-            select_extract_tuple(Es, Index + 1, Tuple)
+            select_extract_tuple(Es, Index + 1, Tuple, Le)
     end;
-select_extract_tuple([], _, _) -> [].
+select_extract_tuple([], _, _, _) -> [].
 
 select_map(Scs, MapSrc, Tf, Vf, St0) ->
     {Is,St1} =
@@ -3125,6 +3127,10 @@ line_anno_1(Name, Line) ->
 line_anno_for_coverage(Anno, #kern{line_coverage_enabled=true}) ->
     line_anno(Anno);
 line_anno_for_coverage(_Anno, #kern{line_coverage_enabled=false}) ->
+    #{};
+line_anno_for_coverage(Anno, #cg{line_coverage_enabled=true}) ->
+    line_anno(Anno);
+line_anno_for_coverage(_Anno, #cg{line_coverage_enabled=false}) ->
     #{}.
 
 find_loc([Line|T], File, _) when is_integer(Line) ->
