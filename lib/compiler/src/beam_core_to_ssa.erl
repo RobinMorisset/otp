@@ -2517,11 +2517,12 @@ select_literal(S, Src, Tf, Vf, St) ->
         end,
     match_fmf(F, Tf, St, S).
 
-select_cons(#cg_val_clause{val=#cg_cons{hd=Hd,tl=Tl},body=B},
+select_cons(#cg_val_clause{val=#cg_cons{hd=Hd,tl=Tl},body=B,anno=Anno},
             Src, Tf, Vf, St0) ->
     {Bis,St1} = match_cg(B, Vf, St0),
     Args = [Src],
-    {Is,St} = make_cond_branch(is_nonempty_list, Args, Tf, #{}, St1),
+    Le = line_anno_for_coverage(Anno, St1),
+    {Is,St} = make_cond_branch(is_nonempty_list, Args, Tf, Le, St1),
     GetHd = #b_set{op=get_hd,dst=Hd,args=Args},
     GetTl = #b_set{op=get_tl,dst=Tl,args=Args},
     {Is ++ [GetHd,GetTl|Bis],St}.
